@@ -1,5 +1,37 @@
 # Basesnapshot - Claude Code Context
 
+## 🚨 最重要ルール: Miyabi 実行方式
+
+**Claude Code から Miyabi を呼び出す際は、必ず Claude MAX 契約の範囲内で自律駆動開発を行うこと。**
+
+### 禁止事項
+- ❌ `ANTHROPIC_API_KEY` を使用した外部 API 呼び出し
+- ❌ miyabi CLI が内部で API を呼び出す方式
+
+### 必須事項
+- ✅ Claude Code 自身が `.claude/agents/*.md` の指示に従って各エージェントを実行
+- ✅ Claude MAX 契約内で完結する自律開発
+
+### 実行フロー
+
+```
+Issue 作成/検出
+    ↓
+Claude Code が IssueAgent として分析・ラベル付与
+    ↓
+Claude Code が CoordinatorAgent としてタスク分解（DAG構築）
+    ↓
+Claude Code が CodeGenAgent としてコード生成
+    ↓
+Claude Code が ReviewAgent として品質チェック（80点基準）
+    ↓
+Claude Code が PRAgent として Draft PR 作成
+```
+
+**このルールはどこから Claude を呼び出しても適用される。**
+
+---
+
 ## プロジェクト概要
 
 **Basesnapshot** - Miyabiフレームワークで構築された自律型開発プロジェクト
