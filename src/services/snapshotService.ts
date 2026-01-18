@@ -154,10 +154,7 @@ export class SnapshotService {
       // 2. Create new target base
       const targetBase = await this.client.createBase(config.targetBaseName);
 
-      // 3. Delete default "Table" that Lark creates automatically
-      await this.deleteDefaultTable(targetBase.app_token);
-
-      // 4. Get all tables from source (with fallback for Advanced Permissions)
+      // 3. Get all tables from source (with fallback for Advanced Permissions)
       let sourceTables = await this.client.listTablesWithFallback(sourceAppToken, tableIdFromUrl);
       console.log(`Snapshot: Got ${sourceTables.length} tables available`);
 
@@ -171,8 +168,9 @@ export class SnapshotService {
       const dateSuffix = this.getDateSuffix();
 
       let totalRecordsProcessed = 0;
+      let firstTableCreated = false;
 
-      // 5. Process each table
+      // 4. Process each table
       for (const sourceTable of sourceTables) {
         try {
           const snapshotTableName = `${sourceTable.name}_snap_${dateSuffix}`;
@@ -183,6 +181,13 @@ export class SnapshotService {
             snapshotTableName
           );
           totalRecordsProcessed += recordsProcessed;
+
+          // 5. Delete default "Table" after first table is created
+          // (Lark requires at least one table in a Base)
+          if (!firstTableCreated) {
+            firstTableCreated = true;
+            await this.deleteDefaultTable(targetBase.app_token);
+          }
         } catch (error) {
           this.errors.push({
             table: sourceTable.name,

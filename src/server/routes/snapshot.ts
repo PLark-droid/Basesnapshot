@@ -138,6 +138,11 @@ router.post('/preview', async (req, res) => {
       throw error;
     }
 
+    // Filter out default "Table" tables (Lark creates these by default)
+    const DEFAULT_TABLE_NAMES = ['Table', 'テーブル', '数据表'];
+    tables = tables.filter((t) => !DEFAULT_TABLE_NAMES.includes(t.name));
+    console.log('After filtering default tables:', tables.length, 'tables');
+
     // Get field counts for each table (use fallback method for Advanced Permissions)
     console.log('Getting fields for', tables.length, 'tables...');
     const tableInfo = await Promise.all(

@@ -211,26 +211,46 @@ export class LarkApiClient {
 
   /**
    * List all tables in a Base
+   * Handles pagination errors gracefully - returns tables fetched so far
    */
   async listTables(appToken: string): Promise<LarkTable[]> {
     const tables: LarkTable[] = [];
     let pageToken: string | undefined;
+    let pageCount = 0;
+    const MAX_PAGES = 20;
 
     do {
-      const path = pageToken
-        ? `/bitable/v1/apps/${appToken}/tables?page_token=${pageToken}`
-        : `/bitable/v1/apps/${appToken}/tables`;
+      try {
+        const path = pageToken
+          ? `/bitable/v1/apps/${appToken}/tables?page_token=${pageToken}`
+          : `/bitable/v1/apps/${appToken}/tables`;
 
-      const response = await this.request<LarkListResponse<LarkTable>>(
-        'GET',
-        path
-      );
+        const response = await this.request<LarkListResponse<LarkTable>>(
+          'GET',
+          path
+        );
 
-      if (response.data?.items) {
-        tables.push(...response.data.items);
+        if (response.data?.items) {
+          tables.push(...response.data.items);
+          console.log(`listTables: got ${response.data.items.length} tables (total: ${tables.length})`);
+        }
+
+        pageToken = response.data?.page_token;
+        pageCount++;
+
+        if (pageCount >= MAX_PAGES) {
+          console.log('listTables: reached max pages, stopping');
+          break;
+        }
+      } catch (error) {
+        // If pagination fails but we already have some tables, return them
+        if (tables.length > 0) {
+          console.log(`listTables: pagination error after ${tables.length} tables, returning partial result`);
+          return tables;
+        }
+        // If no tables fetched yet, rethrow the error
+        throw error;
       }
-
-      pageToken = response.data?.page_token;
     } while (pageToken);
 
     return tables;
