@@ -2,14 +2,31 @@
  * Snapshot Routes
  *
  * @description API endpoints for creating snapshots
+ * @note Uses cookie-based session storage for serverless compatibility
  */
 
 import { Router } from 'express';
 import { SnapshotService } from '../../services/snapshotService.js';
-import { AuthService } from '../../services/authService.js';
+import { AuthService, type OAuthTokens } from '../../services/authService.js';
 import type { SnapshotConfig } from '../../types/index.js';
+import type { Request } from 'express';
 
 const router = Router();
+
+// Check if running in serverless environment
+const IS_SERVERLESS = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+// Cookie name for auth tokens
+const AUTH_COOKIE = 'lark_auth';
+
+// Helper: Decode tokens from cookie
+function decodeTokens(encoded: string): OAuthTokens | null {
+  try {
+    return JSON.parse(Buffer.from(encoded, 'base64').toString('utf-8'));
+  } catch {
+    return null;
+  }
+}
 
 // Get auth service instance
 const getAuthService = () => {
@@ -24,23 +41,32 @@ const getAuthService = () => {
   return new AuthService({ appId, appSecret }, redirectUri);
 };
 
+// Helper: Get tokens from request (supports both serverless and development)
+function getTokensFromRequest(req: Request): OAuthTokens | null {
+  if (IS_SERVERLESS) {
+    // In serverless: read tokens from cookie
+    const authCookie = req.cookies?.[AUTH_COOKIE];
+    if (!authCookie) return null;
+    return decodeTokens(authCookie);
+  } else {
+    // In development: get from in-memory store
+    const sessionId = req.cookies?.session_id;
+    if (!sessionId) return null;
+    const authService = getAuthService();
+    return authService.getTokens(sessionId) || null;
+  }
+}
+
 /**
  * POST /api/snapshot
  * Create a new snapshot
  */
 router.post('/', async (req, res) => {
   try {
-    const sessionId = req.cookies?.session_id;
-
-    if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const authService = getAuthService();
-    const tokens = authService.getTokens(sessionId);
+    const tokens = getTokensFromRequest(req);
 
     if (!tokens) {
-      return res.status(401).json({ error: 'Session expired' });
+      return res.status(401).json({ error: 'Not authenticated' });
     }
 
     // Check if token is expired
@@ -88,17 +114,15 @@ router.post('/', async (req, res) => {
  */
 router.post('/preview', async (req, res) => {
   try {
-    const sessionId = req.cookies?.session_id;
+    const tokens = getTokensFromRequest(req);
 
-    if (!sessionId) {
+    if (!tokens) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const authService = getAuthService();
-    const tokens = authService.getTokens(sessionId);
-
-    if (!tokens) {
-      return res.status(401).json({ error: 'Session expired' });
+    // Check if token is expired
+    if (Date.now() >= tokens.expiresAt) {
+      return res.status(401).json({ error: 'Token expired' });
     }
 
     const { sourceBaseUrl } = req.body;

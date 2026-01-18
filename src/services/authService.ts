@@ -5,14 +5,17 @@
  */
 
 import type { LarkConfig, LarkTokenResponse } from '../types/index.js';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const LARK_OAUTH_URL = 'https://open.larksuite.com/open-apis/authen/v1';
 const LARK_AUTH_URL = 'https://open.larksuite.com/open-apis/auth/v3';
 
-// Get directory for session storage
+// Check if running in serverless environment (Vercel)
+const IS_SERVERLESS = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+// Get directory for session storage (only used in development)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SESSION_FILE = join(__dirname, '../../.sessions.json');
 
@@ -33,11 +36,13 @@ export interface AuthState {
   expiresAt?: number;
 }
 
-// File-based token storage (survives server restarts during development)
+// In-memory token storage
 let tokenStore = new Map<string, OAuthTokens>();
 
-// Load sessions from file on startup
+// Load sessions from file on startup (only in development)
 function loadSessions(): void {
+  if (IS_SERVERLESS) return; // Skip in serverless environment
+
   try {
     if (existsSync(SESSION_FILE)) {
       const data = JSON.parse(readFileSync(SESSION_FILE, 'utf-8'));
@@ -49,8 +54,10 @@ function loadSessions(): void {
   }
 }
 
-// Save sessions to file
+// Save sessions to file (only in development)
 function saveSessions(): void {
+  if (IS_SERVERLESS) return; // Skip in serverless environment
+
   try {
     const data = Object.fromEntries(tokenStore);
     writeFileSync(SESSION_FILE, JSON.stringify(data, null, 2));

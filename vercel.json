@@ -10,6 +10,8 @@
     }
   ],
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "VERCEL": "1",
+    "CLIENT_URL": "https://basesnapshot.vercel.app"
   }
 }
