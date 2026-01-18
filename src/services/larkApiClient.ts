@@ -328,6 +328,15 @@ export class LarkApiClient {
   }
 
   /**
+   * Delete a table from a Base
+   */
+  async deleteTable(appToken: string, tableId: string): Promise<void> {
+    console.log(`Deleting table: ${tableId}`);
+    await this.request('DELETE', `/bitable/v1/apps/${appToken}/tables/${tableId}`);
+    console.log(`Deleted table: ${tableId}`);
+  }
+
+  /**
    * List all fields in a table
    * Includes safeguard against infinite pagination loops
    */

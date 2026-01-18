@@ -105,6 +105,38 @@ export class SnapshotService {
   }
 
   /**
+   * Generate date suffix in YYYYMMDD format
+   */
+  private getDateSuffix(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  }
+
+  /**
+   * Delete the default "Table" that Lark creates when a new Base is created
+   */
+  private async deleteDefaultTable(appToken: string): Promise<void> {
+    try {
+      const tables = await this.client.listTables(appToken);
+      // Find the default table (usually named "Table" or similar)
+      const defaultTable = tables.find(
+        (t) => t.name === 'Table' || t.name === 'テーブル' || t.name === '数据表'
+      );
+
+      if (defaultTable) {
+        console.log(`Deleting default table: ${defaultTable.name} (${defaultTable.table_id})`);
+        await this.client.deleteTable(appToken, defaultTable.table_id);
+      }
+    } catch (error) {
+      // Non-critical error, log and continue
+      console.log('Failed to delete default table:', (error as Error).message);
+    }
+  }
+
+  /**
    * Create a static snapshot of a Lark Base
    */
   async createSnapshot(config: SnapshotConfig): Promise<SnapshotResult> {
@@ -122,7 +154,10 @@ export class SnapshotService {
       // 2. Create new target base
       const targetBase = await this.client.createBase(config.targetBaseName);
 
-      // 3. Get all tables from source (with fallback for Advanced Permissions)
+      // 3. Delete default "Table" that Lark creates automatically
+      await this.deleteDefaultTable(targetBase.app_token);
+
+      // 4. Get all tables from source (with fallback for Advanced Permissions)
       let sourceTables = await this.client.listTablesWithFallback(sourceAppToken, tableIdFromUrl);
       console.log(`Snapshot: Got ${sourceTables.length} tables available`);
 
@@ -132,16 +167,20 @@ export class SnapshotService {
         console.log(`Snapshot: Filtered to ${sourceTables.length} selected tables`);
       }
 
+      // Generate date suffix for table names (YYYYMMDD)
+      const dateSuffix = this.getDateSuffix();
+
       let totalRecordsProcessed = 0;
 
-      // 4. Process each table
+      // 5. Process each table
       for (const sourceTable of sourceTables) {
         try {
+          const snapshotTableName = `${sourceTable.name}_snap_${dateSuffix}`;
           const recordsProcessed = await this.processTable(
             sourceAppToken,
             targetBase.app_token,
             sourceTable.table_id,
-            sourceTable.name
+            snapshotTableName
           );
           totalRecordsProcessed += recordsProcessed;
         } catch (error) {
