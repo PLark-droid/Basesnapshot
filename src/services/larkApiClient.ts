@@ -692,7 +692,7 @@ export class LarkApiClient {
     try {
       // Create form data for multipart upload
       const formData = new FormData();
-      const blob = new Blob([fileBuffer], { type: contentType });
+      const blob = new Blob([new Uint8Array(fileBuffer)], { type: contentType });
       formData.append('file', blob, fileName);
       formData.append('file_name', fileName);
 
