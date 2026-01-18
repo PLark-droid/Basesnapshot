@@ -73,7 +73,7 @@ export interface LarkFieldProperty {
 
 /** Select option for SingleSelect/MultiSelect fields */
 export interface LarkSelectOption {
-  id: string;
+  id?: string;  // Optional - Lark API generates ID for new options
   name: string;
   color?: number;
 }
@@ -170,7 +170,9 @@ export interface SnapshotConfig {
   sourceBaseUrl: string;
   targetBaseName: string;
   grantAdminPermission: boolean;
+  /** Copy attachment files to target Base (default: false, convert to file names) */
   preserveAttachments?: boolean;
+  selectedTableIds?: string[];
 }
 
 /** Snapshot result */

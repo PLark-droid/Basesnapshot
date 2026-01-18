@@ -5,9 +5,16 @@
  */
 
 import type { LarkConfig, LarkTokenResponse } from '../types/index.js';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 const LARK_OAUTH_URL = 'https://open.larksuite.com/open-apis/authen/v1';
 const LARK_AUTH_URL = 'https://open.larksuite.com/open-apis/auth/v3';
+
+// Get directory for session storage
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SESSION_FILE = join(__dirname, '../../.sessions.json');
 
 export interface OAuthTokens {
   accessToken: string;
@@ -26,8 +33,34 @@ export interface AuthState {
   expiresAt?: number;
 }
 
-// In-memory token storage (replace with Redis/DB in production)
-const tokenStore = new Map<string, OAuthTokens>();
+// File-based token storage (survives server restarts during development)
+let tokenStore = new Map<string, OAuthTokens>();
+
+// Load sessions from file on startup
+function loadSessions(): void {
+  try {
+    if (existsSync(SESSION_FILE)) {
+      const data = JSON.parse(readFileSync(SESSION_FILE, 'utf-8'));
+      tokenStore = new Map(Object.entries(data));
+      console.log(`Loaded ${tokenStore.size} session(s) from file`);
+    }
+  } catch (error) {
+    console.log('No existing sessions to load');
+  }
+}
+
+// Save sessions to file
+function saveSessions(): void {
+  try {
+    const data = Object.fromEntries(tokenStore);
+    writeFileSync(SESSION_FILE, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error('Failed to save sessions:', error);
+  }
+}
+
+// Load sessions on module load
+loadSessions();
 
 export class AuthService {
   private config: LarkConfig;
@@ -40,12 +73,17 @@ export class AuthService {
 
   /**
    * Get OAuth2 authorization URL
+   * Requests bitable scopes for Base access
    */
   getAuthorizationUrl(state: string): string {
     const params = new URLSearchParams({
       app_id: this.config.appId,
       redirect_uri: this.redirectUri,
       state,
+      // Request scopes for Base access via Wiki URLs
+      // bitable:app - full Base access (read/write)
+      // wiki:wiki:readonly - Wiki page access (to resolve Wiki-embedded Base)
+      scope: 'bitable:app wiki:wiki:readonly',
     });
 
     return `${LARK_OAUTH_URL}/authorize?${params.toString()}`;
@@ -192,6 +230,7 @@ export class AuthService {
    */
   storeTokens(sessionId: string, tokens: OAuthTokens): void {
     tokenStore.set(sessionId, tokens);
+    saveSessions(); // Persist to file
   }
 
   /**
@@ -206,6 +245,7 @@ export class AuthService {
    */
   removeTokens(sessionId: string): void {
     tokenStore.delete(sessionId);
+    saveSessions(); // Persist to file
   }
 
   /**

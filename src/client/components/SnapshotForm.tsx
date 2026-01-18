@@ -14,13 +14,16 @@ interface SnapshotFormProps {
   onComplete: (result: SnapshotResult) => void;
 }
 
+interface TableInfo {
+  name: string;
+  tableId: string;
+  fieldCount: number;
+  dynamicFieldCount: number;
+}
+
 interface PreviewData {
   base: { name: string };
-  tables: Array<{
-    name: string;
-    fieldCount: number;
-    dynamicFieldCount: number;
-  }>;
+  tables: TableInfo[];
   totalTables: number;
   totalDynamicFields: number;
 }
@@ -32,6 +35,7 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
   const [loading, setLoading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const handlePreview = async () => {
@@ -60,6 +64,11 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
 
       setPreview(data);
 
+      // Auto-select all tables
+      if (data.tables) {
+        setSelectedTables(new Set(data.tables.map((t: TableInfo) => t.tableId)));
+      }
+
       // Auto-fill target name if empty
       if (!targetName && data.base?.name) {
         setTargetName(`${data.base.name}_Snapshot`);
@@ -71,11 +80,38 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
     }
   };
 
+  const toggleTableSelection = (tableId: string) => {
+    setSelectedTables((prev) => {
+      const next = new Set(prev);
+      if (next.has(tableId)) {
+        next.delete(tableId);
+      } else {
+        next.add(tableId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllTables = () => {
+    if (preview?.tables) {
+      if (selectedTables.size === preview.tables.length) {
+        setSelectedTables(new Set());
+      } else {
+        setSelectedTables(new Set(preview.tables.map((t) => t.tableId)));
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!sourceUrl || !targetName) {
       setError('Source URL and Target Name are required');
+      return;
+    }
+
+    if (preview && selectedTables.size === 0) {
+      setError('Please select at least one table to copy');
       return;
     }
 
@@ -91,6 +127,7 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
           sourceBaseUrl: sourceUrl,
           targetBaseName: targetName,
           grantAdminPermission: grantAdmin,
+          selectedTableIds: selectedTables.size > 0 ? Array.from(selectedTables) : undefined,
         }),
       });
 
@@ -157,22 +194,43 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
           </div>
           {preview.tables.length > 0 && (
             <div className="mt-3">
-              <p className="text-xs text-gray-500 mb-1">Tables:</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-gray-500">Select tables to copy:</p>
+                <button
+                  type="button"
+                  onClick={toggleAllTables}
+                  className="text-xs text-blue-600 hover:text-blue-800"
+                >
+                  {selectedTables.size === preview.tables.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div className="space-y-2">
                 {preview.tables.map((table) => (
-                  <span
-                    key={table.name}
-                    className="bg-white px-2 py-1 rounded text-xs"
+                  <label
+                    key={table.tableId}
+                    className="flex items-center gap-2 bg-white px-3 py-2 rounded cursor-pointer hover:bg-gray-50"
                   >
-                    {table.name}
+                    <input
+                      type="checkbox"
+                      checked={selectedTables.has(table.tableId)}
+                      onChange={() => toggleTableSelection(table.tableId)}
+                      className="w-4 h-4 text-lark-primary border-gray-300 rounded focus:ring-lark-primary"
+                    />
+                    <span className="text-sm font-medium">{table.name}</span>
+                    <span className="text-xs text-gray-500">
+                      ({table.fieldCount} fields)
+                    </span>
                     {table.dynamicFieldCount > 0 && (
-                      <span className="text-blue-600 ml-1">
-                        ({table.dynamicFieldCount} dynamic)
+                      <span className="text-xs text-blue-600">
+                        {table.dynamicFieldCount} dynamic
                       </span>
                     )}
-                  </span>
+                  </label>
                 ))}
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                {selectedTables.size} / {preview.tables.length} tables selected
+              </p>
             </div>
           )}
         </div>
@@ -210,6 +268,9 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
           管理者権限を付与する
         </label>
       </div>
+      <p className="text-xs text-gray-500">
+        ※ 添付ファイルはファイル名のみがコピーされます（Lark API制約）
+      </p>
 
       {/* Error Display */}
       {error && (
@@ -221,7 +282,7 @@ export function SnapshotForm({ onComplete }: SnapshotFormProps) {
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={loading || !sourceUrl || !targetName}
+        disabled={loading || !sourceUrl || !targetName || (preview && selectedTables.size === 0)}
         className="btn-primary w-full flex items-center justify-center gap-2"
       >
         {loading ? (

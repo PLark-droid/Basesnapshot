@@ -48,7 +48,7 @@ router.post('/', async (req, res) => {
       return res.status(401).json({ error: 'Token expired' });
     }
 
-    const { sourceBaseUrl, targetBaseName, grantAdminPermission } = req.body;
+    const { sourceBaseUrl, targetBaseName, grantAdminPermission, preserveAttachments, selectedTableIds } = req.body;
 
     if (!sourceBaseUrl || !targetBaseName) {
       return res.status(400).json({
@@ -59,12 +59,15 @@ router.post('/', async (req, res) => {
     const appId = process.env.LARK_APP_ID!;
     const appSecret = process.env.LARK_APP_SECRET!;
 
-    const snapshotService = new SnapshotService({ appId, appSecret });
+    // Pass user access token to access user's Bases
+    const snapshotService = new SnapshotService({ appId, appSecret }, tokens.accessToken);
 
     const config: SnapshotConfig = {
       sourceBaseUrl,
       targetBaseName,
       grantAdminPermission: grantAdminPermission ?? true,
+      preserveAttachments: preserveAttachments ?? false,
+      selectedTableIds: selectedTableIds || undefined,
     };
 
     const result = await snapshotService.createSnapshot(config);
@@ -107,28 +110,54 @@ router.post('/preview', async (req, res) => {
     const appId = process.env.LARK_APP_ID!;
     const appSecret = process.env.LARK_APP_SECRET!;
 
-    // Use LarkApiClient to get base info
+    // Use LarkApiClient with user access token for accessing user's Bases
     const { LarkApiClient } = await import('../../services/larkApiClient.js');
-    const client = new LarkApiClient({ appId, appSecret });
+    const client = new LarkApiClient({ appId, appSecret }, tokens.accessToken);
 
-    const appToken = client.parseBaseUrl(sourceBaseUrl);
-    const base = await client.getBase(appToken);
-    const tables = await client.listTables(appToken);
+    // Resolve URL to get app_token (handles Wiki URLs)
+    const appToken = await client.resolveBaseAppToken(sourceBaseUrl);
+    const tableIdFromUrl = client.parseTableIdFromUrl(sourceBaseUrl);
+    console.log('Resolved app_token:', appToken, 'tableIdFromUrl:', tableIdFromUrl);
 
-    // Get field counts for each table
+    let base;
+    try {
+      base = await client.getBase(appToken);
+      console.log('getBase succeeded:', base.name);
+    } catch (error) {
+      console.log('getBase failed:', (error as Error).message);
+      throw error;
+    }
+
+    // Try listTables, fallback to specific table if Advanced Permissions block it
+    let tables;
+    try {
+      tables = await client.listTablesWithFallback(appToken, tableIdFromUrl);
+      console.log('listTables succeeded:', tables.length, 'tables');
+    } catch (error) {
+      console.log('listTables failed:', (error as Error).message);
+      throw error;
+    }
+
+    // Get field counts for each table (use fallback method for Advanced Permissions)
+    console.log('Getting fields for', tables.length, 'tables...');
     const tableInfo = await Promise.all(
       tables.map(async (table) => {
-        const fields = await client.listFields(appToken, table.table_id);
+        console.log('Getting fields for table:', table.table_id, table.name);
+        // Use listFieldsWithFallback to gracefully handle Advanced Permissions
+        const fields = await client.listFieldsWithFallback(appToken, table.table_id);
+        console.log('Got', fields.length, 'fields for', table.name);
         const dynamicFields = fields.filter((f) =>
           ['SingleLink', 'DuplexLink', 'Lookup', 'Formula', 'User'].includes(f.ui_type)
         );
         return {
           name: table.name,
+          tableId: table.table_id,
           fieldCount: fields.length,
           dynamicFieldCount: dynamicFields.length,
         };
       })
     );
+    console.log('Table info gathered:', tableInfo.length);
 
     res.json({
       base: {
